@@ -102,7 +102,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const isLoggedIn = localStorage.getItem("admin_isLoggedIn");
 
   if (!token || isLoggedIn !== "true") {
-    window.location.href = "/";
+    window.location.href = "index.html";
     return;
   }
 

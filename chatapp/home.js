@@ -179,6 +179,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   setupNotificationUI();
 
   // Real-time message listener
+  socket.on("force-logout", () => {
+    localStorage.removeItem("chat_token");
+    localStorage.removeItem("chat_user");
+    localStorage.removeItem("chat_isLoggedIn");
+    window.location.href = "/chatapp/login.html";
+  });
+
   socket.on("new-message", (msg) => {
     if (window.currentGroupId && msg.group_id == window.currentGroupId) {
       appendMessage(msg);

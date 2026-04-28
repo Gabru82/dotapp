@@ -104,13 +104,17 @@ const db = mysql.createPool({
   user: process.env.DB_USER || "dotapp",
   password: process.env.DB_PASSWORD || "Dot@App123",
   database: process.env.DB_NAME || "dotapp",
-  port: process.env.DB_PORT || 3306,
+  port: parseInt(process.env.DB_PORT) || 3306,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
 });
 
 // 🧠 INIT DATABASE + TABLES + SAMPLE DATA
 async function initDB() {
   try {
-    // Create DB
+    // Note: If DB_NAME is set in the pool config and the DB doesn't exist,
+    // the connection might fail before reaching this point.
     await db.query(`CREATE DATABASE IF NOT EXISTS dotapp`);
     await db.query(`USE dotapp`);
 
@@ -476,12 +480,14 @@ io.on("connection", (socket) => {
     try {
       // 2. Validate group and call features
       const [groupRows] = await db.query(
-        `SELECT group_call_enabled, personal_call_enabled FROM \`groups\` WHERE id = ?`,
+        "SELECT group_call_enabled, personal_call_enabled FROM `groups` WHERE id = ?",
         [groupId],
       );
       if (groupRows.length === 0) {
         return socket.emit("call-error", "Group not found.");
       }
+
+      const callSession = activeCalls.get(callId);
       const group = groupRows[0];
 
       if (type === "group") {
@@ -501,16 +507,16 @@ io.on("connection", (socket) => {
           `SELECT id FROM users WHERE role = 'admin'`,
         );
         // The above query is incorrect, it should query the admins table
-        // Initialize activeCalls participants with ONLY the caller initially
-        activeCalls.get(callId).participants = new Set([callerId]);
+        
+        if (callSession) callSession.participants = new Set([callerId]);
 
         const allGroupMembers = memberRows.map((row) => row.user_id);
         const allAdmins = adminRows.map((row) => row.id);
         const notifyIds = new Set([...allGroupMembers, ...allAdmins]);
         notifyIds.delete(callerId); // Do not notify the caller
 
-        // Store notified IDs so we can stop their ringing if the caller cancels
-        activeCalls.get(callId).notifiedIds = Array.from(notifyIds);
+        if (callSession) callSession.notifiedIds = Array.from(notifyIds);
+
 
         // Notify all other active members
         for (const participantId of notifyIds) {
@@ -522,7 +528,7 @@ io.on("connection", (socket) => {
                 type: "group",
                 groupId,
                 callerId,
-                fromName: socket.user.name, // Use actual name from socket.user
+                fromName: socket.user.name,
                 participants: Array.from(activeCalls.get(callId).participants), // Send current participants
               });
             }
@@ -577,8 +583,10 @@ io.on("connection", (socket) => {
 
         const targetSocketId = activeUserSockets.get(targetUserId);
         if (targetSocketId) {
-          activeCalls.get(callId).targetUserId = targetUserId; // Track target for potential cancellation
-          activeCalls.get(callId).notifiedIds = [targetUserId];
+          if (callSession) {
+            callSession.targetUserId = targetUserId; 
+            callSession.notifiedIds = [targetUserId];
+          }
           io.to(targetSocketId).emit("incoming-call", {
             callId, // The target user needs the callId to accept
             type: "private",
@@ -617,7 +625,7 @@ io.on("connection", (socket) => {
             activeCalls.delete(callId);
           }, 30000);
 
-          activeCalls.get(callId).timeout = missedTimeout;
+          if (callSession) callSession.timeout = missedTimeout;
         } else {
           socket.emit("call-error", "Target user is offline.");
           await db.query(
@@ -1402,10 +1410,15 @@ const PORT = 3081;
 db.getConnection()
   .then(async (conn) => {
     console.log("✅ MySQL Connected");
-    conn.release();
-    await initDB();
+    try {
+      conn.release();
+      await initDB();
+    } catch (initErr) {
+      console.error("❌ Database initialization failed:", initErr);
+      process.exit(1);
+    }
 
-    server.listen(PORT, () => {
+    server.listen(PORT, "0.0.0.0", () => {
       console.log(`🚀 Server running on http://localhost:${PORT}`);
     });
   })

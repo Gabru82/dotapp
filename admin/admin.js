@@ -10,7 +10,7 @@ function logout() {
   localStorage.removeItem("admin_token");
   localStorage.removeItem("admin_user");
   localStorage.removeItem("admin_isLoggedIn");
-  window.location.href = "/";
+  window.location.href = "/admin/index.html";
 }
 
 // Configuration
@@ -269,7 +269,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     localStorage.removeItem("admin_token");
     localStorage.removeItem("admin_user");
     localStorage.removeItem("admin_isLoggedIn");
-    window.location.href = "/chatapp/login.html";
+    window.location.href = "/admin/index.html";
   });
 
   // Group settings sync

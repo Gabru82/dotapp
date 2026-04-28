@@ -1063,10 +1063,12 @@ app.get("/api/groups/:groupId/messages", auth, async (req, res) => {
     const { groupId } = req.params;
     const result = await db.query(
       `
-            SELECT m.*, COALESCE(u.name, a.name, 'Unknown') as user_name, COALESCE(u.role, a.role, 'Unknown') as user_role 
+            SELECT m.*, 
+                   COALESCE(u.name, a.name, 'Unknown') as user_name, 
+                   COALESCE(u.role, a.role, 'Unknown') as user_role 
             FROM messages m
-            LEFT JOIN users u ON m.user_id = u.id
-            LEFT JOIN admins a ON m.user_id = a.id
+            LEFT JOIN users u ON m.user_id::text = u.id::text
+            LEFT JOIN admins a ON m.user_id::text = a.id::text
             WHERE m.group_id = $1
             ORDER BY m.id ASC
         `,

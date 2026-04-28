@@ -104,7 +104,7 @@ const db = mysql.createPool({
   user: "dotapp",
   password: "Dot@App123",
   database: "dotapp",
-  port: 8000,
+  port: 3306,
 });
 
 // 🧠 INIT DATABASE + TABLES + SAMPLE DATA

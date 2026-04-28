@@ -265,18 +265,21 @@ io.on("connection", (socket) => {
     try {
       // 2. Validate group and call features
       const groupResult = await db.query(
-        "SELECT group_call_enabled, personal_call_enabled FROM groups WHERE id = $1",
+        "SELECT created_by, group_call_enabled, personal_call_enabled FROM groups WHERE id = $1",
         [parseInt(groupId)],
       );
       if (groupResult.rows.length === 0) {
+        activeCalls.delete(callId);
         return socket.emit("call-error", "Group not found.");
       }
 
       const callSession = activeCalls.get(callId);
       const group = groupResult.rows[0];
+      const creatorId = group.created_by;
 
       if (type === "group") {
         if (!group.group_call_enabled) {
+          activeCalls.delete(callId);
           return socket.emit(
             "call-error",
             "Group calls are not enabled for this group.",
@@ -287,7 +290,7 @@ io.on("connection", (socket) => {
           [parseInt(groupId)],
         );
         const adminResult = await db.query(
-          `SELECT id FROM users WHERE role = 'admin'`,
+          `SELECT id FROM users WHERE role = 'admin' UNION SELECT id FROM admins WHERE role = 'admin'`,
         );
 
         if (callSession) callSession.participants = new Set([callerId]);
@@ -295,6 +298,7 @@ io.on("connection", (socket) => {
         const allGroupMembers = memberResult.rows.map((row) => row.user_id);
         const allAdmins = adminResult.rows.map((row) => row.id);
         const notifyIds = new Set([...allGroupMembers, ...allAdmins]);
+        if (creatorId) notifyIds.add(creatorId);
         notifyIds.delete(callerId); // Do not notify the caller
 
         if (callSession) callSession.notifiedIds = Array.from(notifyIds);
@@ -309,6 +313,7 @@ io.on("connection", (socket) => {
                 type: "group",
                 groupId,
                 callerId,
+                callerName: socket.user.name,
                 fromName: socket.user.name,
                 participants: Array.from(activeCalls.get(callId).participants), // Send current participants
               });
@@ -326,12 +331,14 @@ io.on("connection", (socket) => {
         });
       } else if (type === "private") {
         if (!group.personal_call_enabled) {
+          activeCalls.delete(callId);
           return socket.emit(
             "call-error",
             "Personal calls are not enabled for this group.",
           );
         }
         if (!targetUserId) {
+          activeCalls.delete(callId);
           return socket.emit(
             "call-error",
             "Target user ID is required for personal calls.",
@@ -343,8 +350,10 @@ io.on("connection", (socket) => {
           `SELECT id, role FROM users WHERE id = $1 UNION SELECT id, role FROM admins WHERE id = $1`,
           [targetUserId],
         );
-        if (targetCheck.rows.length === 0)
+        if (targetCheck.rows.length === 0) {
+          activeCalls.delete(callId);
           return socket.emit("call-error", "User not found.");
+        }
 
         const membershipResult = await db.query(
           `SELECT 1 FROM group_members WHERE group_id = $1 AND user_id = $2 
@@ -355,6 +364,7 @@ io.on("connection", (socket) => {
 
         // Allow call if target is in group, is the creator, or is an admin
         if (membershipResult.rows.length === 0 && targetCheck.rows[0].role !== "admin") {
+          activeCalls.delete(callId);
           return socket.emit(
             "call-error",
             "Target user is not a member of this group.",
@@ -567,7 +577,11 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", () => {
     console.log(`User disconnected: ${socket.user.id}`);
-    activeUserSockets.delete(socket.user.id);
+    
+    // Only remove from activeUserSockets if this specific socket is the current primary one
+    if (activeUserSockets.get(socket.user.id) === socket.id) {
+      activeUserSockets.delete(socket.user.id);
+    }
 
     // Clean up any calls the user was participating in
     activeCalls.forEach((call, callId) => {

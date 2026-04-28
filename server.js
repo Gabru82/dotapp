@@ -98,13 +98,13 @@ app.get("/", (req, res) => {
 
 const JWT_SECRET = "secret123";
 
-// ✅ Use root for now (simple setup)
+// Use environment variables for database configuration
 const db = mysql.createPool({
-  host: "127.0.0.1",
-  user: "dotapp",
-  password: "Dot@App123",
-  database: "dotapp",
-  port: 3306,
+  host: process.env.DB_HOST || "127.0.0.1",
+  user: process.env.DB_USER || "dotapp",
+  password: process.env.DB_PASSWORD || "Dot@App123",
+  database: process.env.DB_NAME || "dotapp",
+  port: process.env.DB_PORT || 3306,
 });
 
 // 🧠 INIT DATABASE + TABLES + SAMPLE DATA

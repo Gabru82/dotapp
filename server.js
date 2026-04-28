@@ -285,6 +285,10 @@ io.on("connection", (socket) => {
             "Group calls are not enabled for this group.",
           );
         }
+
+        if (callSession) callSession.participants = new Set([callerId]);
+
+        // 1. Get all members and admins to build the notifiedIds list for state tracking
         const memberResult = await db.query(
           `SELECT user_id FROM group_members WHERE group_id = $1`,
           [parseInt(groupId)],
@@ -292,8 +296,6 @@ io.on("connection", (socket) => {
         const adminResult = await db.query(
           `SELECT id FROM users WHERE role = 'admin' UNION SELECT id FROM admins WHERE role = 'admin'`,
         );
-
-        if (callSession) callSession.participants = new Set([callerId]);
 
         const allGroupMembers = memberResult.rows.map((row) => row.user_id);
         const allAdmins = adminResult.rows.map((row) => row.id);
@@ -303,23 +305,27 @@ io.on("connection", (socket) => {
 
         if (callSession) callSession.notifiedIds = Array.from(notifyIds);
 
-        // Notify all other active members
-        for (const participantId of notifyIds) {
-          if (participantId !== callerId) {
-            const participantSocketId = activeUserSockets.get(participantId);
-            if (participantSocketId) {
-              io.to(participantSocketId).emit("incoming-call", {
-                callId,
-                type: "group",
-                groupId,
-                callerId,
-                callerName: socket.user.name,
-                fromName: socket.user.name,
-                participants: Array.from(activeCalls.get(callId).participants), // Send current participants
-              });
-            }
+        // 2. Broadcast to everyone currently in the group room (fastest delivery)
+        const callData = {
+          callId,
+          type: "group",
+          groupId,
+          callerId,
+          callerName: socket.user.name,
+          fromName: socket.user.name,
+          participants: [callerId],
+        };
+        socket.to(`group_${groupId}`).emit("incoming-call", callData);
+
+        // 3. Specifically ensure all admins get the call even if not in the room
+        allAdmins.forEach(adminId => {
+          if (adminId === callerId) return;
+          const adminSocketId = activeUserSockets.get(adminId);
+          if (adminSocketId) {
+            io.to(adminSocketId).emit("incoming-call", callData);
           }
-        }
+        });
+
         // Also send call-accepted to the caller immediately for group calls
         socket.emit("call-accepted", {
           callId, // The caller is already in the call

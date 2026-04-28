@@ -114,19 +114,17 @@ io.use(async (socket, next) => {
   try {
     const decoded = jwt.verify(token, JWT_SECRET); // This will give us id and role
     let userDetails;
-    if (decoded.role === "admin") {
-      const result = await db.query(
-        `SELECT id, name, role FROM admins WHERE id = $1`,
-        [decoded.id],
-      );
-      userDetails = result.rows[0];
-    } else {
-      const result = await db.query(
-        `SELECT id, name, role, active FROM users WHERE id = $1`,
-        [decoded.id],
-      );
+    
+    // Try to find in admins table first
+    let result = await db.query("SELECT id, name, role FROM admins WHERE id = $1", [decoded.id]);
+    userDetails = result.rows[0];
+
+    if (!userDetails) {
+      // Fallback to users table
+      result = await db.query("SELECT id, name, role, active FROM users WHERE id = $1", [decoded.id]);
       userDetails = result.rows[0];
     }
+
     if (!userDetails)
       return next(new Error("Authentication error: User not found"));
 
@@ -629,19 +627,16 @@ async function auth(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET); // This will give us id and role
-    if (decoded.role === "admin") {
-      const result = await db.query(
-        `SELECT id, name, role FROM admins WHERE id = $1`,
-        [decoded.id],
-      );
-      req.user = result.rows[0];
-    } else {
-      const result = await db.query(
-        `SELECT id, name, role, active FROM users WHERE id = $1`,
-        [decoded.id],
-      );
+    // Try finding in admins table first
+    let result = await db.query("SELECT id, name, role FROM admins WHERE id = $1", [decoded.id]);
+    req.user = result.rows[0];
+
+    if (!req.user) {
+      // Fallback to users table
+      result = await db.query("SELECT id, name, role, active FROM users WHERE id = $1", [decoded.id]);
       req.user = result.rows[0];
     }
+
     if (!req.user)
       return res.status(401).json({ error: "Invalid token or user not found" });
     next(); // Proceed if user is found
@@ -652,24 +647,25 @@ async function auth(req, res, next) {
 
 // 🔑 REGISTER
 app.post("/api/register", async (req, res) => {
-  const { id, password, name } = req.body;
+  const { id, password, name, role } = req.body;
 
   try {
     // Check if user already exists
-    const checkResult = await db.query("SELECT * FROM users WHERE id=$1", [id]);
-    if (checkResult.rows.length > 0) {
+    const checkUser = await db.query("SELECT * FROM users WHERE id=$1", [id]);
+    const checkAdmin = await db.query("SELECT * FROM admins WHERE id=$1", [id]);
+    if (checkUser.rows.length > 0 || checkAdmin.rows.length > 0) {
       return res.status(400).json({ error: "User already exists" });
     }
 
     // Hash the password and save the user
     const hash = await bcrypt.hash(password, 10);
+    const finalRole = role || 'user';
     await db.query(
-      "INSERT INTO users (id, name, password, role) VALUES ($1, $2, $3, 'user')",
-      [id, name, hash]
+      "INSERT INTO users (id, name, password, role) VALUES ($1, $2, $3, $4)",
+      [id, name, hash, finalRole]
     );
 
-    // Create a user object and sign a token for auto-login
-    const user = { id, name, role: "user" };
+    const user = { id, name, role: finalRole };
     const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET);
 
     res.json({ token, user });
@@ -683,21 +679,18 @@ app.post("/api/register", async (req, res) => {
 app.post("/api/login", async (req, res) => {
   const { id, password } = req.body;
 
-  const result = await db.query("SELECT * FROM users WHERE id=$1", [id]);
-
   let user;
-
-  if (id === "admin") {
-    const adminResult = await db.query("SELECT * FROM admins WHERE id=$1", [id]);
-    if (adminResult.rows.length === 0) {
-      return res.json({ error: "Admin user not found" });
-    }
+  // Check admins table first
+  const adminResult = await db.query("SELECT * FROM admins WHERE id=$1", [id]);
+  if (adminResult.rows.length > 0) {
     user = adminResult.rows[0];
   } else {
-    if (result.rows.length === 0) {
+    // Then check users table
+    const userResult = await db.query("SELECT * FROM users WHERE id=$1", [id]);
+    if (userResult.rows.length === 0) {
       return res.json({ error: "User not found" });
     }
-    user = result.rows[0];
+    user = userResult.rows[0];
   }
 
   const match = await bcrypt.compare(password, user.password);

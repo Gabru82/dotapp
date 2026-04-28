@@ -2,7 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const path = require("path");
 const fs = require("fs");
-const mysql = require("mysql2/promise");
+const { Pool } = require("pg");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
@@ -104,211 +104,6 @@ app.get("/", (req, res) => {
 
 let db;
 
-// 🧠 INIT DATABASE + TABLES + SAMPLE DATA
-async function initDB() {
-  try {
-    // Users table
-    await db.query(`
-            CREATE TABLE IF NOT EXISTS users (
-                id VARCHAR(50) PRIMARY KEY,
-                name VARCHAR(100),
-                password VARCHAR(255),
-                role ENUM('admin','user','developer') DEFAULT 'user',
-                active TINYINT(1) DEFAULT 1,
-                profile_image MEDIUMTEXT
-            )
-        `);
-
-    // Admins table
-    await db.query(`
-            CREATE TABLE IF NOT EXISTS admins (
-                id VARCHAR(50) PRIMARY KEY,
-                name VARCHAR(100),
-                password VARCHAR(255),
-                role ENUM('admin') DEFAULT 'admin',
-                profile_image MEDIUMTEXT
-            )
-        `);
-    // Groups table
-    await db.query(`
-            CREATE TABLE IF NOT EXISTS \`groups\` (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                name VARCHAR(100),
-                created_by VARCHAR(50),
-                group_call_enabled TINYINT(1) DEFAULT 0,
-                personal_call_enabled TINYINT(1) DEFAULT 0
-            )
-        `);
-
-    // Group members
-    await db.query(`
-            CREATE TABLE IF NOT EXISTS group_members (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                group_id INT,
-                user_id VARCHAR(50)
-            )
-        `);
-
-    // Messages table
-    await db.query(`
-            CREATE TABLE IF NOT EXISTS messages (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                group_id INT,
-                user_id VARCHAR(50),
-                content TEXT,
-                type ENUM('text','image','video','audio','document') DEFAULT 'text', -- ADDED 'audio','document'
-                file_url TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        `);
-
-    // 🔥 Insert default admin (if not exists)
-    const [admin] = await db.query(`SELECT * FROM users WHERE id='admin'`);
-
-    const [existingAdmin] = await db.query(
-      `SELECT * FROM admins WHERE id='admin'`,
-    );
-    if (existingAdmin.length === 0) {
-      const hash = await bcrypt.hash("admin123", 10);
-      await db.query(
-        `INSERT INTO admins (id, name, password, role) VALUES ('admin','Admin', ?, 'admin')`,
-        [hash],
-      );
-      console.log("✅ Default admin created (id: admin / pass: admin123)");
-    }
-
-    // 🔥 Insert sample users
-    const [users] = await db.query(`SELECT * FROM users WHERE role='user'`);
-
-    if (users.length === 0) {
-      const hash = await bcrypt.hash("1234", 10);
-
-      await db.query(`
-                INSERT INTO users (id, name, password, role) VALUES
-                ('user1','User One','${hash}','user'),
-                ('user2','User Two','${hash}','user')
-            `);
-
-      console.log("✅ Sample users created");
-    }
-
-    // Ensure 'active' column exists for existing tables
-    const [columns] = await db.query(`SHOW COLUMNS FROM users LIKE 'active'`);
-    if (columns.length === 0) {
-      await db.query(
-        `ALTER TABLE users ADD COLUMN active TINYINT(1) DEFAULT 1`,
-      );
-      console.log('✅ Added "active" column to users table');
-    }
-
-    // Ensure 'profile_image' column exists
-    const [imgColumns] = await db.query(
-      `SHOW COLUMNS FROM users LIKE 'profile_image'`,
-    );
-    if (imgColumns.length === 0) {
-      await db.query(`ALTER TABLE users ADD COLUMN profile_image MEDIUMTEXT`);
-      console.log('✅ Added "profile_image" column to users table');
-    } else {
-      console.log('✅ Verified "profile_image" column is MEDIUMTEXT');
-    }
-  // Ensure 'profile_image' column exists in admins
-    const [adminImgColumns] = await db.query(
-      `SHOW COLUMNS FROM admins LIKE 'profile_image'`,
-    );
-    if (adminImgColumns.length === 0) {
-      await db.query(`ALTER TABLE admins ADD COLUMN profile_image MEDIUMTEXT`);
-      console.log('✅ Added "profile_image" column to admins table');
-    }
-    // Ensure media columns exist in messages for existing setups
-    const [msgColumns] = await db.query(
-      `SHOW COLUMNS FROM messages LIKE 'type'`,
-    );
-    if (msgColumns.length === 0) {
-      await db.query(`ALTER TABLE messages ADD COLUMN type ENUM('text','image','video','audio','document') DEFAULT 'text'`);
-      await db.query(`ALTER TABLE messages ADD COLUMN file_url TEXT`);
-      console.log("✅ Added media columns to messages table");
-    } else {
-      // Check if ENUM needs updating for existing tables
-      const [enumCheck] = await db.query(`
-        SELECT COLUMN_TYPE
-        FROM INFORMATION_SCHEMA.COLUMNS
-        WHERE TABLE_SCHEMA = ?
-        AND TABLE_NAME = 'messages'
-        AND COLUMN_NAME = 'type';
-      `, [process.env.DB_NAME]);
-      if (
-        enumCheck.length > 0 &&
-        (!enumCheck[0].COLUMN_TYPE.includes("'audio'") ||
-          !enumCheck[0].COLUMN_TYPE.includes("'document'"))
-      ) {
-        await db.query(
-          `ALTER TABLE messages MODIFY COLUMN type ENUM('text','image','video','audio','document') DEFAULT 'text'`,
-        );
-        console.log(
-          "✅ Updated messages.type ENUM to include audio and document",
-        );
-      }
-    }
-
-    // Ensure 'role' ENUM is up to date for existing tables
-
-    console.log('✅ Verified "role" ENUM configuration');
-
-    console.log("✅ Database ready");
-
-    // Add call feature columns if they don't exist
-    const [groupCallCol] = await db.query(
-      `SHOW COLUMNS FROM groups LIKE 'group_call_enabled'`,
-    );
-    if (groupCallCol.length === 0) {
-      await db.query(
-        `ALTER TABLE groups ADD COLUMN group_call_enabled TINYINT(1) DEFAULT 0`,
-      );
-      console.log('✅ Added "group_call_enabled" column to groups table');
-    }
-    const [personalCallCol] = await db.query(
-      `SHOW COLUMNS FROM groups LIKE 'personal_call_enabled'`,
-    );
-    if (personalCallCol.length === 0) {
-      await db.query(
-        `ALTER TABLE groups ADD COLUMN personal_call_enabled TINYINT(1) DEFAULT 0`,
-      );
-      console.log('✅ Added "personal_call_enabled" column to groups table');
-    }
-
-    // Ensure default values are set for new columns if they were just added
-    await db.query(
-      `UPDATE \`groups\` SET group_call_enabled = 0 WHERE group_call_enabled IS NULL`,
-    );
-    await db.query(
-      `UPDATE \`groups\` SET personal_call_enabled = 0 WHERE personal_call_enabled IS NULL`,
-    );
-
-    // Call History Tables
-    await db.query(`
-        CREATE TABLE IF NOT EXISTS calls (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            group_id INT,
-            caller_id VARCHAR(50),
-            type ENUM('group', 'private'),
-            start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            end_time TIMESTAMP NULL
-        )
-    `);
-    await db.query(`
-        CREATE TABLE IF NOT EXISTS call_participants (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            call_id INT,
-            user_id VARCHAR(50),
-            joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            left_at TIMESTAMP NULL
-        )
-    `);
-  } catch (err) {
-    console.error("DB ERROR:", err);
-  }
-}
-
 // Socket.io Authentication Middleware
 io.use(async (socket, next) => {
   const token = socket.handshake.auth.token;
@@ -320,17 +115,17 @@ io.use(async (socket, next) => {
     const decoded = jwt.verify(token, JWT_SECRET); // This will give us id and role
     let userDetails;
     if (decoded.role === "admin") {
-      const [adminRows] = await db.query(
-        `SELECT id, name, role FROM admins WHERE id = ?`,
+      const result = await db.query(
+        `SELECT id, name, role FROM admins WHERE id = $1`,
         [decoded.id],
       );
-      userDetails = adminRows[0];
+      userDetails = result.rows[0];
     } else {
-      const [userRows] = await db.query(
-        `SELECT id, name, role, active FROM users WHERE id = ?`,
+      const result = await db.query(
+        `SELECT id, name, role, active FROM users WHERE id = $1`,
         [decoded.id],
       );
-      userDetails = userRows[0];
+      userDetails = result.rows[0];
     }
     if (!userDetails)
       return next(new Error("Authentication error: User not found"));
@@ -379,20 +174,20 @@ io.on("connection", (socket) => {
       console.log(`[Message] From: ${userId} To Group: ${groupId}`);
 
       // 1. Save message to Database
-      const [result] = await db.query(
-        "INSERT INTO messages (group_id, user_id, content, type, file_url) VALUES (?, ?, ?, ?, ?)",
-        [groupId, userId, content || null, msgType, file_url || null],
+      const result = await db.query(
+        "INSERT INTO messages (group_id, user_id, content, type, file_url) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+        [parseInt(groupId), userId, content || null, msgType, file_url || null],
       );
 
       // 2. Fetch sender details
-      const [userRows] = await db.query(
-        "SELECT name, role FROM users WHERE id = ? UNION SELECT name, role FROM admins WHERE id = ?",
-        [userId, userId],
+      const userResult = await db.query(
+        "SELECT name, role FROM users WHERE id = $1 UNION SELECT name, role FROM admins WHERE id = $1",
+        [userId],
       );
-      const sender = userRows[0];
+      const sender = userResult.rows[0];
 
       const messageObject = {
-        id: result.insertId,
+        id: result.rows[0].id,
         group_id: groupId,
         user_id: userId,
         user_name: sender.name,
@@ -448,13 +243,13 @@ io.on("connection", (socket) => {
     const callId = `${groupId}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
     // Save to DB
-    const [res] = await db.query(
-      "INSERT INTO calls (group_id, caller_id, type) VALUES (?, ?, ?)",
-      [groupId, callerId, type],
+    const res = await db.query(
+      "INSERT INTO calls (group_id, caller_id, type) VALUES ($1, $2, $3) RETURNING id",
+      [parseInt(groupId), callerId, type],
     );
-    const dbCallId = res.insertId;
+    const dbCallId = res.rows[0].id;
     await db.query(
-      "INSERT INTO call_participants (call_id, user_id) VALUES (?, ?)",
+      "INSERT INTO call_participants (call_id, user_id) VALUES ($1, $2)",
       [dbCallId, callerId],
     );
 
@@ -468,16 +263,16 @@ io.on("connection", (socket) => {
     });
     try {
       // 2. Validate group and call features
-      const [groupRows] = await db.query(
-        "SELECT group_call_enabled, personal_call_enabled FROM `groups` WHERE id = ?",
-        [groupId],
+      const groupResult = await db.query(
+        "SELECT group_call_enabled, personal_call_enabled FROM groups WHERE id = $1",
+        [parseInt(groupId)],
       );
-      if (groupRows.length === 0) {
+      if (groupResult.rows.length === 0) {
         return socket.emit("call-error", "Group not found.");
       }
 
       const callSession = activeCalls.get(callId);
-      const group = groupRows[0];
+      const group = groupResult.rows[0];
 
       if (type === "group") {
         if (!group.group_call_enabled) {
@@ -486,26 +281,22 @@ io.on("connection", (socket) => {
             "Group calls are not enabled for this group.",
           );
         }
-        // Get all members of the group
-        const [memberRows] = await db.query(
-          `SELECT user_id FROM group_members WHERE group_id = ?`,
-          [groupId],
+        const memberResult = await db.query(
+          `SELECT user_id FROM group_members WHERE group_id = $1`,
+          [parseInt(groupId)],
         );
-        // Also get all admins to ensure they receive the call notification
-        const [adminRows] = await db.query(
+        const adminResult = await db.query(
           `SELECT id FROM users WHERE role = 'admin'`,
         );
-        // The above query is incorrect, it should query the admins table
-        
+
         if (callSession) callSession.participants = new Set([callerId]);
 
-        const allGroupMembers = memberRows.map((row) => row.user_id);
-        const allAdmins = adminRows.map((row) => row.id);
+        const allGroupMembers = memberResult.rows.map((row) => row.user_id);
+        const allAdmins = adminResult.rows.map((row) => row.id);
         const notifyIds = new Set([...allGroupMembers, ...allAdmins]);
         notifyIds.delete(callerId); // Do not notify the caller
 
         if (callSession) callSession.notifiedIds = Array.from(notifyIds);
-
 
         // Notify all other active members
         for (const participantId of notifyIds) {
@@ -547,23 +338,22 @@ io.on("connection", (socket) => {
         }
 
         // Check if target user exists and determine if they can be called in this group context
-        const [targetCheck] = await db.query(
-          // This query should check both users and admins tables
-          `SELECT role, id FROM users WHERE id = ?`,
+        const targetCheck = await db.query(
+          `SELECT role, id FROM users WHERE id = $1`,
           [targetUserId],
         );
-        if (targetCheck.length === 0)
+        if (targetCheck.rows.length === 0)
           return socket.emit("call-error", "User not found.");
 
-        const [membership] = await db.query(
-          `SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ? 
+        const membershipResult = await db.query(
+          `SELECT 1 FROM group_members WHERE group_id = $1 AND user_id = $2 
            UNION 
-           SELECT 1 FROM \`groups\` WHERE id = ? AND created_by = ?`,
-          [groupId, targetUserId, groupId, targetUserId],
+           SELECT 1 FROM groups WHERE id = $1 AND created_by = $2`,
+          [parseInt(groupId), targetUserId],
         );
 
         // Allow call if target is in group, is the creator, or is an admin
-        if (membership.length === 0 && targetCheck[0].role !== "admin") {
+        if (membershipResult.rows.length === 0 && targetCheck.rows[0].role !== "admin") {
           return socket.emit(
             "call-error",
             "Target user is not a member of this group.",
@@ -573,7 +363,7 @@ io.on("connection", (socket) => {
         const targetSocketId = activeUserSockets.get(targetUserId);
         if (targetSocketId) {
           if (callSession) {
-            callSession.targetUserId = targetUserId; 
+            callSession.targetUserId = targetUserId;
             callSession.notifiedIds = [targetUserId];
           }
           io.to(targetSocketId).emit("incoming-call", {
@@ -607,7 +397,7 @@ io.on("connection", (socket) => {
 
             // Update DB for call ending as missed
             await db.query(
-              "UPDATE calls SET end_time = CURRENT_TIMESTAMP WHERE id = ?",
+              "UPDATE calls SET end_time = CURRENT_TIMESTAMP WHERE id = $1",
               [dbCallId],
             );
 
@@ -618,7 +408,7 @@ io.on("connection", (socket) => {
         } else {
           socket.emit("call-error", "Target user is offline.");
           await db.query(
-            "UPDATE calls SET end_time = CURRENT_TIMESTAMP WHERE id = ?",
+            "UPDATE calls SET end_time = CURRENT_TIMESTAMP WHERE id = $1",
             [dbCallId],
           );
           activeCalls.delete(callId);
@@ -656,7 +446,7 @@ io.on("connection", (socket) => {
 
     // Save participant to DB
     await db.query(
-      "INSERT INTO call_participants (call_id, user_id) VALUES (?, ?)",
+      "INSERT INTO call_participants (call_id, user_id) VALUES ($1, $2)",
       [call.dbCallId, acceptorId],
     );
 
@@ -718,7 +508,7 @@ io.on("connection", (socket) => {
 
       // Update DB for participant leaving
       await db.query(
-        "UPDATE call_participants SET left_at = CURRENT_TIMESTAMP WHERE call_id = ? AND user_id = ? AND left_at IS NULL",
+        "UPDATE call_participants SET left_at = CURRENT_TIMESTAMP WHERE call_id = $1 AND user_id = $2 AND left_at IS NULL",
         [call.dbCallId, userId],
       );
 
@@ -760,7 +550,7 @@ io.on("connection", (socket) => {
 
       // Update DB for call ending
       await db.query(
-        "UPDATE calls SET end_time = CURRENT_TIMESTAMP WHERE id = ?",
+        "UPDATE calls SET end_time = CURRENT_TIMESTAMP WHERE id = $1",
         [call.dbCallId],
       );
 
@@ -840,17 +630,17 @@ async function auth(req, res, next) {
   try {
     const decoded = jwt.verify(token, JWT_SECRET); // This will give us id and role
     if (decoded.role === "admin") {
-      const [adminRows] = await db.query(
-        `SELECT id, name, role FROM admins WHERE id = ?`,
+      const result = await db.query(
+        `SELECT id, name, role FROM admins WHERE id = $1`,
         [decoded.id],
       );
-      req.user = adminRows[0];
+      req.user = result.rows[0];
     } else {
-      const [userRows] = await db.query(
-        `SELECT id, name, role, active FROM users WHERE id = ?`,
+      const result = await db.query(
+        `SELECT id, name, role, active FROM users WHERE id = $1`,
         [decoded.id],
       );
-      req.user = userRows[0];
+      req.user = result.rows[0];
     }
     if (!req.user)
       return res.status(401).json({ error: "Invalid token or user not found" });
@@ -866,16 +656,16 @@ app.post("/api/register", async (req, res) => {
 
   try {
     // Check if user already exists
-    const [rows] = await db.query(`SELECT * FROM users WHERE id=?`, [id]);
-    if (rows.length > 0) {
+    const checkResult = await db.query("SELECT * FROM users WHERE id=$1", [id]);
+    if (checkResult.rows.length > 0) {
       return res.status(400).json({ error: "User already exists" });
     }
 
     // Hash the password and save the user
     const hash = await bcrypt.hash(password, 10);
     await db.query(
-      `INSERT INTO users (id, name, password, role) VALUES (?, ?, ?, 'user')`,
-      [id, name, hash],
+      "INSERT INTO users (id, name, password, role) VALUES ($1, $2, $3, 'user')",
+      [id, name, hash]
     );
 
     // Create a user object and sign a token for auto-login
@@ -893,21 +683,21 @@ app.post("/api/register", async (req, res) => {
 app.post("/api/login", async (req, res) => {
   const { id, password } = req.body;
 
-  const [rows] = await db.query(`SELECT * FROM users WHERE id=?`, [id]);
+  const result = await db.query("SELECT * FROM users WHERE id=$1", [id]);
 
   let user;
 
   if (id === "admin") {
-    const [adminRows] = await db.query(`SELECT * FROM admins WHERE id=?`, [id]);
-    if (adminRows.length === 0) {
+    const adminResult = await db.query("SELECT * FROM admins WHERE id=$1", [id]);
+    if (adminResult.rows.length === 0) {
       return res.json({ error: "Admin user not found" });
     }
-    user = adminRows[0];
+    user = adminResult.rows[0];
   } else {
-    if (rows.length === 0) {
+    if (result.rows.length === 0) {
       return res.json({ error: "User not found" });
     }
-    user = rows[0];
+    user = result.rows[0];
   }
 
   const match = await bcrypt.compare(password, user.password);
@@ -939,8 +729,8 @@ app.post("/api/admin/users/create", auth, async (req, res) => {
     const hash = await bcrypt.hash(password, 10);
 
     await db.query(
-      `INSERT INTO users (id, name, password, role, active) VALUES (?, ?, ?, ?, 1)`,
-      [id, name, hash, role],
+      "INSERT INTO users (id, name, password, role, active) VALUES ($1, $2, $3, $4, true)",
+      [id, name, hash, role]
     );
 
     // Return the new user object (excluding password)
@@ -960,7 +750,7 @@ app.patch("/api/admin/users/:id", auth, async (req, res) => {
     if (!name || !role)
       return res.status(400).json({ error: "Name and role are required" });
 
-    await db.query(`UPDATE users SET name=?, role=? WHERE id=?`, [
+    await db.query("UPDATE users SET name=$1, role=$2 WHERE id=$3", [
       name,
       role,
       req.params.id,
@@ -977,7 +767,7 @@ app.delete("/api/admin/users/:id", auth, async (req, res) => {
     if (req.user.role !== "admin")
       return res.status(400).json({ error: "Cannot delete default admin" });
 
-    await db.query(`DELETE FROM users WHERE id=?`, [req.params.id]);
+    await db.query("DELETE FROM users WHERE id=$1", [req.params.id]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: "Database error deleting user" });
@@ -990,8 +780,8 @@ app.patch("/api/admin/users/:id/status", auth, async (req, res) => {
     if (req.user.role !== "admin")
       return res.status(403).json({ error: "Forbidden" });
     const { active } = req.body;
-    await db.query(`UPDATE users SET active=? WHERE id=?`, [
-      active ? 1 : 0,
+    await db.query("UPDATE users SET active=$1 WHERE id=$2", [
+      active,
       req.params.id,
     ]);
     res.json({ success: true });
@@ -1005,10 +795,10 @@ app.get("/api/users", auth, async (req, res) => {
   try {
     if (req.user.role !== "admin")
       return res.status(403).json({ error: "Forbidden" });
-    const [rows] = await db.query(
-      `SELECT id, name, role, active FROM users`, // Admin can see all users
+    const result = await db.query(
+      "SELECT id, name, role, active FROM users", // Admin can see all users
     );
-    res.json(rows);
+    res.json(result.rows);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Database error fetching users" });
@@ -1020,8 +810,8 @@ app.get("/api/admin/users", auth, async (req, res) => {
   try {
     if (req.user.role !== "admin")
       return res.status(403).json({ error: "Forbidden" });
-    const [rows] = await db.query(`SELECT id, name, role, active FROM users`);
-    res.json(rows);
+    const result = await db.query("SELECT id, name, role, active FROM users");
+    res.json(result.rows);
   } catch (err) {
     // This is a duplicate of /api/users, should be consolidated or removed
     console.error(err);
@@ -1035,7 +825,7 @@ app.get("/api/admin/groups", auth, async (req, res) => {
     if (req.user.role !== "admin")
       return res.status(403).json({ error: "Forbidden" });
 
-    const [rows] = await db.query(`
+    const result = await db.query(`
   SELECT 
     g.id, 
     g.name, 
@@ -1043,11 +833,11 @@ app.get("/api/admin/groups", auth, async (req, res) => {
     g.group_call_enabled, 
     g.personal_call_enabled, 
     COUNT(gm.user_id) as member_count 
-  FROM \`groups\` g
+  FROM groups g
   LEFT JOIN group_members gm ON g.id = gm.group_id
-  GROUP BY g.id
+  GROUP BY g.id, g.name, g.created_by, g.group_call_enabled, g.personal_call_enabled
 `);
-    res.json(rows);
+    res.json(result.rows);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Database error fetching groups" });
@@ -1066,19 +856,19 @@ app.patch("/api/admin/groups/:id/call-features", auth, async (req, res) => {
     const fields = [];
     const values = [];
     if (updates.group_call_enabled !== undefined) {
-      fields.push("group_call_enabled = ?");
-      values.push(updates.group_call_enabled ? 1 : 0);
+      fields.push(`group_call_enabled = $${values.length + 1}`);
+      values.push(updates.group_call_enabled);
     }
     if (updates.personal_call_enabled !== undefined) {
-      fields.push("personal_call_enabled = ?");
-      values.push(updates.personal_call_enabled ? 1 : 0);
+      fields.push(`personal_call_enabled = $${values.length + 1}`);
+      values.push(updates.personal_call_enabled);
     }
 
     if (fields.length > 0) {
       values.push(id);
       await db.query(
-        `UPDATE \`groups\` SET ${fields.join(", ")} WHERE id = ?`,
-        values,
+        `UPDATE groups SET ${fields.join(", ")} WHERE id = $${values.length}`,
+        values
       );
       // Notify members of the change in real-time
       io.to(`group_${id}`).emit("group-settings-updated", { id, ...updates });
@@ -1099,16 +889,16 @@ app.post("/api/admin/groups", auth, async (req, res) => {
 
     const { name, memberIds } = req.body;
 
-    const [result] = await db.query(
-      `INSERT INTO \`groups\` (name, created_by) VALUES (?, ?)`,
+    const result = await db.query(
+      "INSERT INTO groups (name, created_by) VALUES ($1, $2) RETURNING id",
       [name, req.user.id],
     );
 
-    const groupId = result.insertId;
+    const groupId = result.rows[0].id;
 
     for (let uId of memberIds) {
       await db.query(
-        `INSERT INTO group_members (group_id, user_id) VALUES (?, ?)`,
+        "INSERT INTO group_members (group_id, user_id) VALUES ($1, $2)",
         [groupId, uId],
       );
     }
@@ -1142,23 +932,26 @@ app.delete("/api/admin/groups/:id", auth, async (req, res) => {
     const groupId = req.params.id;
 
     // Get members list before deletion to notify them
-    const [members] = await db.query(
-      `SELECT user_id FROM group_members WHERE group_id = ?`,
+    const memberResult = await db.query(
+      "SELECT user_id FROM group_members WHERE group_id = $1",
       [groupId],
     );
 
     // Delete associated data first
-    await db.query(`DELETE FROM messages WHERE group_id = ?`, [groupId]);
-    await db.query(`DELETE FROM group_members WHERE group_id = ?`, [groupId]);
-    
-    // Cleanup call history
-    await db.query(`DELETE FROM call_participants WHERE call_id IN (SELECT id FROM calls WHERE group_id = ?)`, [groupId]);
-    await db.query(`DELETE FROM calls WHERE group_id = ?`, [groupId]);
+    await db.query("DELETE FROM messages WHERE group_id = $1", [groupId]);
+    await db.query("DELETE FROM group_members WHERE group_id = $1", [groupId]);
 
-    await db.query(`DELETE FROM \`groups\` WHERE id = ?`, [groupId]);
-    
+    // Cleanup call history
+    await db.query(
+      "DELETE FROM call_participants WHERE call_id IN (SELECT id FROM calls WHERE group_id = $1)",
+      [groupId],
+    );
+    await db.query("DELETE FROM calls WHERE group_id = $1", [groupId]);
+
+    await db.query("DELETE FROM groups WHERE id = $1", [groupId]);
+
     // Notify former members so their UI updates
-    members.forEach((m) => {
+    memberResult.rows.forEach((m) => {
       const targetSocketId = activeUserSockets.get(m.user_id);
       if (targetSocketId) {
         io.to(targetSocketId).emit("groups-updated", {
@@ -1179,19 +972,19 @@ app.delete("/api/admin/groups/:id", auth, async (req, res) => {
 app.get("/api/groups/:groupId/members", auth, async (req, res) => {
   try {
     const { groupId } = req.params;
-    const [members] = await db.query(
+    const result = await db.query(
       `
             SELECT u.id, u.name, u.role
             FROM users u
-            WHERE u.id IN (SELECT user_id FROM group_members WHERE group_id = ?)
+            WHERE u.id IN (SELECT user_id FROM group_members WHERE group_id = $1)
             UNION
             SELECT a.id, a.name, a.role
             FROM admins a
-            WHERE a.id = (SELECT created_by FROM \`groups\` WHERE id = ?)
+            WHERE a.id = (SELECT created_by FROM groups WHERE id = $2)
         `,
       [groupId, groupId],
     );
-    res.json(members);
+    res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: "Error fetching members" });
   }
@@ -1206,18 +999,18 @@ app.post("/api/groups/:groupId/members", auth, async (req, res) => {
     const { userId } = req.body;
 
     await db.query(
-      `INSERT INTO group_members (group_id, user_id) VALUES (?, ?)`,
+      "INSERT INTO group_members (group_id, user_id) VALUES ($1, $2)",
       [groupId, userId],
     );
 
     // Notify user in real-time
-    const [groupRows] = await db.query("SELECT name FROM groups WHERE id = ?", [
+    const groupResult = await db.query("SELECT name FROM groups WHERE id = $1", [
       groupId,
     ]);
     const targetSocketId = activeUserSockets.get(userId);
-    if (targetSocketId && groupRows.length > 0) {
+    if (targetSocketId && groupResult.rows.length > 0) {
       io.to(targetSocketId).emit("added-to-group", {
-        groupName: groupRows[0].name,
+        groupName: groupResult.rows[0].name,
       });
       io.to(targetSocketId).emit("groups-updated");
     }
@@ -1235,21 +1028,22 @@ app.delete("/api/groups/:groupId/members/:userId", auth, async (req, res) => {
       return res.status(403).json({ error: "Only admin" });
     const { groupId, userId } = req.params;
 
-    const [groupRows] = await db.query("SELECT name FROM \`groups\` WHERE id = ?", [
-      groupId,
-    ]);
+    const groupResult = await db.query(
+      "SELECT name FROM groups WHERE id = $1",
+      [groupId],
+    );
 
     await db.query(
-      `DELETE FROM group_members WHERE group_id = ? AND user_id = ?`,
+      "DELETE FROM group_members WHERE group_id = $1 AND user_id = $2",
       [groupId, userId],
     );
 
     // Notify user in real-time
     const targetSocketId = activeUserSockets.get(userId);
-    if (targetSocketId && groupRows.length > 0) {
+    if (targetSocketId && groupResult.rows.length > 0) {
       io.to(targetSocketId).emit("removed-from-group", {
         groupId: groupId,
-        groupName: groupRows[0].name,
+        groupName: groupResult.rows[0].name,
       });
       io.to(targetSocketId).emit("groups-updated", {
         removed: true,
@@ -1267,19 +1061,19 @@ app.delete("/api/groups/:groupId/members/:userId", auth, async (req, res) => {
 app.get("/api/groups/:groupId/messages", auth, async (req, res) => {
   try {
     const { groupId } = req.params;
-    const [messages] = await db.query(
+    const result = await db.query(
       `
             SELECT m.*, COALESCE(u.name, a.name, 'Unknown') as user_name, COALESCE(u.role, a.role, 'Unknown') as user_role 
             FROM messages m
             LEFT JOIN users u ON m.user_id = u.id
             LEFT JOIN admins a ON m.user_id = a.id
-            WHERE m.group_id = ?
+            WHERE m.group_id = $1
             ORDER BY m.id ASC
         `,
       [groupId],
     );
 
-    res.json(messages);
+    res.json(result.rows);
   } catch (err) {
     console.error("Error fetching messages:", err);
     res.status(500).json({ error: "Error fetching messages" });
@@ -1293,7 +1087,7 @@ app.post("/api/groups/:groupId/messages", auth, async (req, res) => {
     const { content } = req.body;
 
     await db.query(
-      `INSERT INTO messages (group_id, user_id, content) VALUES (?, ?, ?)`,
+      "INSERT INTO messages (group_id, user_id, content) VALUES ($1, $2, $3)",
       [groupId, req.user.id, content],
     );
 
@@ -1306,17 +1100,17 @@ app.post("/api/groups/:groupId/messages", auth, async (req, res) => {
 // 👥 GET MY GROUPS
 app.get("/api/my-groups", auth, async (req, res) => {
   try {
-    const [rows] = await db.query(
+    const result = await db.query(
       `
           SELECT g.*, 
           (SELECT COUNT(*) FROM group_members WHERE group_id = g.id) as member_count
-          FROM \`groups\` g
+          FROM groups g
           JOIN group_members gm ON g.id = gm.group_id
-          WHERE gm.user_id=?
+          WHERE gm.user_id=$1
       `,
       [req.user.id],
     );
-    res.json(rows);
+    res.json(result.rows);
   } catch (err) {
     console.error("Error fetching my-groups:", err);
     res.status(500).json({ error: "Database error fetching groups" });
@@ -1327,23 +1121,23 @@ app.get("/api/my-groups", auth, async (req, res) => {
 app.get("/api/groups/:groupId/calls", auth, async (req, res) => {
   try {
     const { groupId } = req.params;
-    const [calls] = await db.query(
+    const result = await db.query(
       `
         SELECT 
             c.id, c.group_id, c.caller_id, c.type, c.start_time, c.end_time,
-            GROUP_CONCAT(COALESCE(u.name, a.name, 'Unknown') SEPARATOR ', ') as participant_names,
-            TIMESTAMPDIFF(SECOND, c.start_time, c.end_time) as duration_seconds
+            STRING_AGG(COALESCE(u.name, a.name, 'Unknown'), ', ') as participant_names,
+            EXTRACT(EPOCH FROM (c.end_time - c.start_time)) as duration_seconds
         FROM calls c
         JOIN call_participants cp ON c.id = cp.call_id
         LEFT JOIN users u ON cp.user_id = u.id
         LEFT JOIN admins a ON cp.user_id = a.id
-        WHERE c.group_id = ? AND c.end_time IS NOT NULL
-        GROUP BY c.id
+        WHERE c.group_id = $1 AND c.end_time IS NOT NULL
+        GROUP BY c.id, c.group_id, c.caller_id, c.type, c.start_time, c.end_time
         ORDER BY c.start_time DESC
       `,
       [groupId],
     );
-    res.json(calls);
+    res.json(result.rows);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Error fetching call history" });
@@ -1357,15 +1151,15 @@ app.patch("/api/profile", auth, async (req, res) => {
 
   try {
     // Fetch current user data
-    const [rows] = await db.query(
-      "SELECT name, profile_image FROM users WHERE id = ?",
+    const result = await db.query(
+      "SELECT name, profile_image FROM users WHERE id = $1",
       [userId],
     );
-    if (rows.length === 0)
+    if (result.rows.length === 0)
       return res.status(404).json({ error: "User not found" });
 
-    const currentName = rows[0].name;
-    const currentImage = rows[0].profile_image;
+    const currentName = result.rows[0].name;
+    const currentImage = result.rows[0].profile_image;
 
     const updatedName = name !== undefined ? name : currentName;
     const updatedImage =
@@ -1373,9 +1167,9 @@ app.patch("/api/profile", auth, async (req, res) => {
 
     let sql;
     if (req.user.role === "admin") {
-      sql = `UPDATE admins SET name = ?, profile_image = ? WHERE id = ?`;
+      sql = "UPDATE admins SET name = $1, profile_image = $2 WHERE id = $3";
     } else {
-      sql = `UPDATE users SET name = ?, profile_image = ? WHERE id = ?`;
+      sql = "UPDATE users SET name = $1, profile_image = $2 WHERE id = $3";
     }
 
     await db.query(sql, [updatedName, updatedImage, userId]);
@@ -1395,38 +1189,15 @@ app.patch("/api/profile", auth, async (req, res) => {
 
 async function startServer() {
   try {
-    // Explicitly define DB connection parameters, with defaults for local development
-    const DB_HOST = process.env.DB_HOST || '127.0.0.1';
-    const DB_PORT = parseInt(process.env.DB_PORT || '3306', 10);
-    const DB_USER = process.env.DB_USER;
-    const DB_PASSWORD = process.env.DB_PASSWORD;
-    const DB_NAME = process.env.DB_NAME;
-
-    // 1. Decouple DB initialization: Ensure the database exists using a temporary connection
-    const tempConn = await mysql.createConnection({
-      host: DB_HOST,
-      user: DB_USER,
-      password: DB_PASSWORD,
-      port: DB_PORT,
-    });
-    await tempConn.query(`CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\``);
-    await tempConn.end();
-
-    // 2. Initialize the main connection pool using environment variables only
-    db = mysql.createPool({
-      host: DB_HOST,
-      user: DB_USER,
-      password: DB_PASSWORD,
-      database: DB_NAME,
-      port: DB_PORT,
-      waitForConnections: true,
-      connectionLimit: 10,
-      queueLimit: 0,
+    db = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: {
+        rejectUnauthorized: false
+      }
     });
 
-    console.log("✅ MySQL Connected and Pool Created");
-    await initDB();
-    console.log(`Attempting to connect to MySQL at ${DB_HOST}:${DB_PORT} for database ${DB_NAME}`);
+    console.log("✅ PostgreSQL Connected and Pool Created");
+
     server.listen(PORT, "0.0.0.0", () => {
       console.log(`🚀 Server running on http://localhost:${PORT}`);
     });

@@ -339,7 +339,7 @@ io.on("connection", (socket) => {
 
         // Check if target user exists and determine if they can be called in this group context
         const targetCheck = await db.query(
-          `SELECT role, id FROM users WHERE id = $1`,
+          `SELECT id, role FROM users WHERE id = $1 UNION SELECT id, role FROM admins WHERE id = $1`,
           [targetUserId],
         );
         if (targetCheck.rows.length === 0)

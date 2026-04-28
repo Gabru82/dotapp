@@ -1,3 +1,4 @@
+require("dotenv").config();
 const express = require("express");
 const path = require("path");
 const fs = require("fs");
@@ -9,22 +10,27 @@ const http = require("http");
 const multer = require("multer");
 const { Server } = require("socket.io");
 
+const PORT = process.env.PORT || 3081;
+const JWT_SECRET = process.env.JWT_SECRET;
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, "uploads");
+const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: CORS_ORIGIN,
     methods: ["GET", "POST"],
   },
 });
 
-app.use(cors());
+app.use(cors({ origin: CORS_ORIGIN }));
 app.use(express.json({ limit: "10mb" }));
 const activeCalls = new Map();
 // Configure Multer for media uploads
-const uploadDir = path.join(__dirname, "uploads");
+const uploadDir = UPLOAD_DIR;
 if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir);
+  fs.mkdirSync(uploadDir, { recursive: true });
 }
 
 const storage = multer.diskStorage({
@@ -96,28 +102,11 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "chatapp", "login.html"));
 });
 
-const JWT_SECRET = "secret123";
-
-// Use environment variables for database configuration
-const db = mysql.createPool({
-  host: process.env.DB_HOST || "127.0.0.1",
-  user: process.env.DB_USER || "dotapp",
-  password: process.env.DB_PASSWORD || "Dot@App123",
-  database: process.env.DB_NAME || "dotapp",
-  port: parseInt(process.env.DB_PORT) || 3306,
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-});
+let db;
 
 // 🧠 INIT DATABASE + TABLES + SAMPLE DATA
 async function initDB() {
   try {
-    // Note: If DB_NAME is set in the pool config and the DB doesn't exist,
-    // the connection might fail before reaching this point.
-    await db.query(`CREATE DATABASE IF NOT EXISTS dotapp`);
-    await db.query(`USE dotapp`);
-
     // Users table
     await db.query(`
             CREATE TABLE IF NOT EXISTS users (
@@ -243,10 +232,10 @@ async function initDB() {
       const [enumCheck] = await db.query(`
         SELECT COLUMN_TYPE
         FROM INFORMATION_SCHEMA.COLUMNS
-        WHERE TABLE_SCHEMA = 'dotapp'
+        WHERE TABLE_SCHEMA = ?
         AND TABLE_NAME = 'messages'
         AND COLUMN_NAME = 'type';
-      `);
+      `, [process.env.DB_NAME]);
       if (
         enumCheck.length > 0 &&
         (!enumCheck[0].COLUMN_TYPE.includes("'audio'") ||
@@ -1404,22 +1393,40 @@ app.patch("/api/profile", auth, async (req, res) => {
   }
 });
 
-// 🚀 START SERVER
-const PORT = 3081;
+async function startServer() {
+  try {
+    // 1. Decouple DB initialization: Ensure the database exists using a temporary connection
+    const tempConn = await mysql.createConnection({
+      host: process.env.DB_HOST,
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      port: parseInt(process.env.DB_PORT),
+    });
+    await tempConn.query(`CREATE DATABASE IF NOT EXISTS \`${process.env.DB_NAME}\``);
+    await tempConn.end();
 
-db.getConnection()
-  .then(async (conn) => {
-    console.log("✅ MySQL Connected");
-    try {
-      conn.release();
-      await initDB();
-    } catch (initErr) {
-      console.error("❌ Database initialization failed:", initErr);
-      process.exit(1);
-    }
+    // 2. Initialize the main connection pool using environment variables only
+    db = mysql.createPool({
+      host: process.env.DB_HOST,
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME,
+      port: parseInt(process.env.DB_PORT),
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
+    });
+
+    console.log("✅ MySQL Connected and Pool Created");
+    await initDB();
 
     server.listen(PORT, "0.0.0.0", () => {
       console.log(`🚀 Server running on http://localhost:${PORT}`);
     });
-  })
-  .catch((err) => console.error(err));
+  } catch (err) {
+    console.error("❌ Startup Error:", err);
+    process.exit(1);
+  }
+}
+
+startServer();

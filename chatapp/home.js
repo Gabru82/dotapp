@@ -9,7 +9,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   // Initialize Socket.io Connection
-  const socket = io("https://dotapp.demotele.online", {
+  const socket = io("https://dotapp.onrender.com", {
     auth: { token: token },
   });
 

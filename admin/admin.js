@@ -14,7 +14,7 @@ function logout() {
 }
 
 // Configuration
-const API_BASE_URL = "https://dotapp.demotele.online";
+const API_BASE_URL = "https://dotapp.onrender.com";
 
 // Initialize Socket.io Connection
 const socket = io(API_BASE_URL, {

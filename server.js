@@ -865,7 +865,7 @@ app.patch("/api/admin/groups/:id/call-features", auth, async (req, res) => {
     }
 
     if (fields.length > 0) {
-      values.push(id);
+      values.push(parseInt(id));
       await db.query(
         `UPDATE groups SET ${fields.join(", ")} WHERE id = $${values.length}`,
         values
@@ -934,21 +934,21 @@ app.delete("/api/admin/groups/:id", auth, async (req, res) => {
     // Get members list before deletion to notify them
     const memberResult = await db.query(
       "SELECT user_id FROM group_members WHERE group_id = $1",
-      [groupId],
+      [parseInt(groupId)],
     );
 
     // Delete associated data first
-    await db.query("DELETE FROM messages WHERE group_id = $1", [groupId]);
-    await db.query("DELETE FROM group_members WHERE group_id = $1", [groupId]);
+    await db.query("DELETE FROM messages WHERE group_id = $1", [parseInt(groupId)]);
+    await db.query("DELETE FROM group_members WHERE group_id = $1", [parseInt(groupId)]);
 
     // Cleanup call history
     await db.query(
       "DELETE FROM call_participants WHERE call_id IN (SELECT id FROM calls WHERE group_id = $1)",
-      [groupId],
+      [parseInt(groupId)],
     );
-    await db.query("DELETE FROM calls WHERE group_id = $1", [groupId]);
+    await db.query("DELETE FROM calls WHERE group_id = $1", [parseInt(groupId)]);
 
-    await db.query("DELETE FROM groups WHERE id = $1", [groupId]);
+    await db.query("DELETE FROM groups WHERE id = $1", [parseInt(groupId)]);
 
     // Notify former members so their UI updates
     memberResult.rows.forEach((m) => {
@@ -982,7 +982,7 @@ app.get("/api/groups/:groupId/members", auth, async (req, res) => {
             FROM admins a
             WHERE a.id = (SELECT created_by FROM groups WHERE id = $2)
         `,
-      [groupId, groupId],
+      [parseInt(groupId), parseInt(groupId)],
     );
     res.json(result.rows);
   } catch (err) {
@@ -1000,7 +1000,7 @@ app.post("/api/groups/:groupId/members", auth, async (req, res) => {
 
     await db.query(
       "INSERT INTO group_members (group_id, user_id) VALUES ($1, $2)",
-      [groupId, userId],
+      [parseInt(groupId), userId],
     );
 
     // Notify user in real-time
@@ -1035,7 +1035,7 @@ app.delete("/api/groups/:groupId/members/:userId", auth, async (req, res) => {
 
     await db.query(
       "DELETE FROM group_members WHERE group_id = $1 AND user_id = $2",
-      [groupId, userId],
+      [parseInt(groupId), userId],
     );
 
     // Notify user in real-time
@@ -1070,7 +1070,7 @@ app.get("/api/groups/:groupId/messages", auth, async (req, res) => {
             WHERE m.group_id = $1
             ORDER BY m.id ASC
         `,
-      [groupId],
+      [parseInt(groupId)],
     );
 
     res.json(result.rows);
@@ -1088,7 +1088,7 @@ app.post("/api/groups/:groupId/messages", auth, async (req, res) => {
 
     await db.query(
       "INSERT INTO messages (group_id, user_id, content) VALUES ($1, $2, $3)",
-      [groupId, req.user.id, content],
+      [parseInt(groupId), req.user.id, content],
     );
 
     res.json({ success: true });
@@ -1135,7 +1135,7 @@ app.get("/api/groups/:groupId/calls", auth, async (req, res) => {
         GROUP BY c.id, c.group_id, c.caller_id, c.type, c.start_time, c.end_time
         ORDER BY c.start_time DESC
       `,
-      [groupId],
+      [parseInt(groupId)],
     );
     res.json(result.rows);
   } catch (err) {

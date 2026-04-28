@@ -1395,23 +1395,30 @@ app.patch("/api/profile", auth, async (req, res) => {
 
 async function startServer() {
   try {
+    // Explicitly define DB connection parameters, with defaults for local development
+    const DB_HOST = process.env.DB_HOST || '127.0.0.1';
+    const DB_PORT = parseInt(process.env.DB_PORT || '3306', 10);
+    const DB_USER = process.env.DB_USER;
+    const DB_PASSWORD = process.env.DB_PASSWORD;
+    const DB_NAME = process.env.DB_NAME;
+
     // 1. Decouple DB initialization: Ensure the database exists using a temporary connection
     const tempConn = await mysql.createConnection({
-      host: process.env.DB_HOST,
-      user: process.env.DB_USER,
-      password: process.env.DB_PASSWORD,
-      port: parseInt(process.env.DB_PORT),
+      host: DB_HOST,
+      user: DB_USER,
+      password: DB_PASSWORD,
+      port: DB_PORT,
     });
-    await tempConn.query(`CREATE DATABASE IF NOT EXISTS \`${process.env.DB_NAME}\``);
+    await tempConn.query(`CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\``);
     await tempConn.end();
 
     // 2. Initialize the main connection pool using environment variables only
     db = mysql.createPool({
-      host: process.env.DB_HOST,
-      user: process.env.DB_USER,
-      password: process.env.DB_PASSWORD,
-      database: process.env.DB_NAME,
-      port: parseInt(process.env.DB_PORT),
+      host: DB_HOST,
+      user: DB_USER,
+      password: DB_PASSWORD,
+      database: DB_NAME,
+      port: DB_PORT,
       waitForConnections: true,
       connectionLimit: 10,
       queueLimit: 0,
@@ -1419,7 +1426,7 @@ async function startServer() {
 
     console.log("✅ MySQL Connected and Pool Created");
     await initDB();
-
+    console.log(`Attempting to connect to MySQL at ${DB_HOST}:${DB_PORT} for database ${DB_NAME}`);
     server.listen(PORT, "0.0.0.0", () => {
       console.log(`🚀 Server running on http://localhost:${PORT}`);
     });

@@ -264,6 +264,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     showToast(msg);
   });
 
+  // Real-time listener to handle account deletion or forced logouts
+  socket.on("force-logout", () => {
+    localStorage.removeItem("admin_token");
+    localStorage.removeItem("admin_user");
+    localStorage.removeItem("admin_isLoggedIn");
+    window.location.href = "/chatapp/login.html";
+  });
+
   // Group settings sync
   socket.on("group-settings-updated", (data) => {
     const group = groups.find((g) => g.id == data.id);

@@ -139,6 +139,9 @@ io.use(async (socket, next) => {
 const activeUserSockets = new Map();
 io.on("connection", (socket) => {
   activeUserSockets.set(socket.user.id, socket.id);
+  
+  // Join a unique room for this user to handle multi-tab events (like force logout)
+  socket.join(`user_${socket.user.id}`);
   console.log(`User connected: ${socket.user.id} (${socket.user.role})`);
 
   /**
@@ -759,8 +762,13 @@ app.delete("/api/admin/users/:id", auth, async (req, res) => {
   try {
     if (req.user.role !== "admin")
       return res.status(400).json({ error: "Cannot delete default admin" });
+    
+    const userId = req.params.id;
+    await db.query("DELETE FROM users WHERE id=$1", [userId]);
 
-    await db.query("DELETE FROM users WHERE id=$1", [req.params.id]);
+    // Notify all active tabs/sessions of this user to log out immediately
+    io.to(`user_${userId}`).emit("force-logout");
+
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: "Database error deleting user" });

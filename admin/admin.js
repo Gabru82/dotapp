@@ -315,6 +315,49 @@ document.addEventListener("DOMContentLoaded", async () => {
     updateThemeIcon(next);
   });
 
+  // Search Functionality
+  const searchInput = document.querySelector(".search-box input");
+  const searchResults = document.createElement("div");
+  searchResults.className = "search-results-overlay";
+  document.querySelector(".search-box").appendChild(searchResults);
+
+  searchInput.addEventListener("input", () => {
+    const query = searchInput.value.trim().toLowerCase();
+    if (!query) {
+      searchResults.style.display = "none";
+      if (document.getElementById("user-list")) renderUsers();
+      return;
+    }
+
+    const filtered = users.filter(u => 
+      u.name.toLowerCase().includes(query) || 
+      u.id.toLowerCase().includes(query) ||
+      (u.role && u.role.toLowerCase().includes(query))
+    );
+
+    if (document.getElementById("user-list")) renderUsers(filtered);
+
+    if (filtered.length > 0) {
+      searchResults.innerHTML = filtered.slice(0, 8).map(u => `
+        <div class="search-result-item" onclick="window.openEditModal('${u.id}'); document.querySelector('.search-results-overlay').style.display='none';">
+          <div class="res-info">
+            <strong>${u.name}</strong>
+            <span>${u.role || 'user'}</span>
+          </div>
+          <small>${u.id}</small>
+        </div>
+      `).join("");
+      searchResults.style.display = "block";
+    } else {
+      searchResults.innerHTML = '<div style="padding: 10px; color: var(--text-muted); font-size: 0.8rem;">No matches found</div>';
+      searchResults.style.display = "block";
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".search-box")) searchResults.style.display = "none";
+  });
+
   function updateThemeIcon(theme) {
     themeBtn.innerHTML =
       theme === "dark"
@@ -392,11 +435,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         `,
   };
 
-  async function renderUsers() {
+  async function renderUsers(data = users) {
     const list = document.getElementById("user-list");
     if (!list) return;
 
-    list.innerHTML = users
+    list.innerHTML = data
       .map(
         (user) => `
             <tr>

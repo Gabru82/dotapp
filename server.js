@@ -83,7 +83,7 @@ const upload = multer({
 app.use((req, res, next) => {
   res.setHeader(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.socket.io; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com; img-src 'self' data: https: https://ui-avatars.com; connect-src 'self' http://localhost:3001 ws://localhost:3001 https://cdn.socket.io; media-src 'self' data:;",
+    "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.socket.io; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com; img-src 'self' data: https: https://ui-avatars.com; connect-src 'self' http://localhost:3001 ws://localhost:3001 https://cdn.socket.io https://dotapp.demotele.online wss://dotapp.demotele.online; media-src 'self' data:;",
   );
   next();
 });

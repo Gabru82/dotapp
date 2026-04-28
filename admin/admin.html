@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - DotChat</title>
+    <link rel="stylesheet" href="/admin/admin.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Responsive Refactor Styles */
+        .sidebar-toggle {
+            display: none;
+            background: none;
+            border: none;
+            color: var(--text-main, #333);
+            font-size: 1.25rem;
+            cursor: pointer;
+            margin-right: 1rem;
+            padding: 5px;
+            transition: opacity 0.2s;
+        }
+
+        .sidebar-toggle:hover {
+            opacity: 0.7;
+        }
+
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(2px);
+            z-index: 10003;
+        }
+
+        @media (max-width: 1024px) {
+            .dashboard-container {
+                display: flex;
+                position: relative;
+                justify-content: start;
+                align-items: center;
+            }
+
+            .sidebar-toggle {
+                display: block;
+            }
+
+            .sidebar {
+                position: fixed;
+                top: 0;
+                right: -280px;
+                /* Hide off-canvas to the right as requested */
+                width: 280px;
+                height: 100vh;
+                z-index: 10004;
+                transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                box-shadow: -5px 0 15px rgba(0, 0, 0, 0.1);
+            }
+
+            .dashboard-container.sidebar-open .sidebar {
+                right: 0;
+            }
+
+            .dashboard-container.sidebar-open .sidebar-overlay {
+                display: block;
+            }
+
+            .main-content {
+                width: 100%;
+                padding: 0;
+            }
+
+            .top-bar {
+                padding: 1rem;
+                flex-wrap: wrap;
+                gap: 10px;
+            }
+
+            .search-box {
+                order: 3;
+                width: 100%;
+                margin-top: 10px;
+            }
+
+            /* Stack Grid Sections */
+            .stats-grid {
+                grid-template-columns: 1fr !important;
+            }
+
+            .group-detail-view {
+                flex-direction: column !important;
+                height: auto !important;
+                min-height: 70vh;
+            }
+
+            .group-sidebar {
+                width: 100% !important;
+                border-left: none !important;
+                border-top: 1px solid var(--border);
+                margin-top: 1rem;
+            }
+
+            .chat-main {
+                height: 500px;
+            }
+
+            /* Table Responsiveness */
+            .table-container {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                margin-bottom: 2rem;
+            }
+
+            .user-table {
+                min-width: 650px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="dashboard-container">
+        <div id="sidebar-overlay" class="sidebar-overlay"></div>
+        <main class="main-content">
+            <header class="top-bar">
+                <button id="sidebar-toggle" class="sidebar-toggle" title="Toggle Sidebar">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <div class="search-box">
+                    <i class="fas fa-search"></i>
+                    <input type="text" placeholder="Search analytics or users...">
+                </div>
+                <div class="top-actions">
+                    <button id="theme-toggle" class="icon-btn" title="Toggle Theme">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                    <div class="icon-btn" title="Notifications">
+                        <i class="fas fa-bell"></i>
+                    </div>
+                    <div class="profile-trigger">
+                        <span>Admin User</span>
+                        <img src="https://ui-avatars.com/api/?name=Admin+User&background=3b82f6&color=fff" alt="Profile"
+                            class="profile-img">
+                    </div>
+                </div>
+            </header>
+            <div id="dynamic-content">
+                <!-- Content injected via JS -->
+            </div>
+        </main>
+        <nav class="sidebar">
+            <div class="logo-area">DotChat</div>
+            <ul class="nav-links">
+                <li class="nav-item active" data-section="dashboard"><i class="fas fa-chart-line"></i> Dashboard</li>
+                <li class="nav-item" data-section="users"><i class="fas fa-users"></i> Users</li>
+                <li class="nav-item" data-section="groups"><i class="fas fa-layer-group"></i> Groups</li>
+
+            </ul>
+            <div class="sidebar-footer">
+                <button class="nav-item logout-btn" id="logout-btn"><i class="fas fa-sign-out-alt"></i> Logout</button>
+            </div>
+        </nav>
+    </div>
+</body>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script src="/admin/admin.js"></script>
+
+</html>

@@ -6,63 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     document.getElementById('login-btn').addEventListener('click', login);
-    document.getElementById('register-btn').addEventListener('click', register);
-    document.getElementById('toggle-to-register').addEventListener('click', (e) => {
-        e.preventDefault();
-        toggleForms();
-    });
-    document.getElementById('toggle-to-login').addEventListener('click', (e) => {
-        e.preventDefault();
-        toggleForms();
-    });
 });
-
-function toggleForms() {
-    const loginForm = document.getElementById('login-form');
-    const registerForm = document.getElementById('register-form');
-    if (loginForm.style.display === 'none') {
-        loginForm.style.display = 'block';
-        registerForm.style.display = 'none';
-    } else {
-        loginForm.style.display = 'none';
-        registerForm.style.display = 'block';
-    }
-}
-
-async function register() {
-    const id = document.getElementById('reg-username').value.trim();
-    const password = document.getElementById('reg-password').value;
-    const name = id; // Defaulting name to ID since there isn't a dedicated name field yet
-
-    if (!id || !password) {
-        return await showAlert('Please fill ID and password');
-    }
-
-    try {
-        const response = await fetch('/api/register', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id, password, name, role: 'admin' })
-        });
-
-        const data = await response.json();
-
-        if (response.ok && data.token) {
-            // Save session and auto-login
-            localStorage.setItem('admin_token', data.token);
-            localStorage.setItem('admin_user', JSON.stringify(data.user));
-            localStorage.setItem('admin_isLoggedIn', 'true');
-            window.location.href = '/admin/admin.html';
-        } else {
-            const errorMsg = Array.isArray(data.error) 
-                ? data.error.map(e => e.msg || e.error).join(', ') 
-                : data.error;
-            showAlert(errorMsg || 'Registration failed');
-        }
-    } catch (err) {
-        showAlert('Server error: ' + err.message);
-    }
-}
 
 async function login() {
     const id = document.getElementById('login-username').value.trim();

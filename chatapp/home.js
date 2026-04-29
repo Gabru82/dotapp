@@ -192,6 +192,25 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
+  socket.on("message-updated", (data) => {
+    const bubble = document.querySelector(`.message[data-id="${data.messageId}"] .msg-content`);
+    if (bubble) {
+      bubble.innerText = data.content;
+      if (!bubble.parentNode.querySelector('.edited-label')) {
+        const label = document.createElement('div');
+        label.className = 'edited-label';
+        label.style.cssText = "font-size: 0.65rem; opacity: 0.7; margin-top: 4px; text-align: right;";
+        label.innerText = "edited";
+        bubble.parentNode.appendChild(label);
+      }
+    }
+  });
+
+  socket.on("message-deleted", (data) => {
+    const msgEl = document.querySelector(`.message[data-id="${data.messageId}"]`);
+    if (msgEl) msgEl.remove();
+  });
+
   // Added to group notification listener
   socket.on("added-to-group", (data) => {
     addNotification(`Admin added you in "${data.groupName}"`);
@@ -1087,16 +1106,79 @@ document.addEventListener("DOMContentLoaded", async () => {
       messageContent = `<a href="${m.file_url}" target="_blank" style="color: inherit; text-decoration: underline;"><i class="fas fa-file"></i> ${fileName}</a>`;
     }
 
+    const msgTypeAttr = m.type || "text";
     const msgHtml = `
-            <div class="message ${isMe ? "sent" : "received"}" style="margin-bottom: 10px; text-align: ${isMe ? "right" : "left"}">
+            <div class="message ${isMe ? "sent" : "received"}" data-id="${m.id}" data-type="${msgTypeAttr}" style="margin-bottom: 10px; text-align: ${isMe ? "right" : "left"}">
                 <div style="font-size: 0.8rem; color: #888;">${m.user_name} <span style="font-size: 0.7rem; color: var(--primary, #007bff); text-transform: uppercase; font-weight: bold;">[${m.user_role}]</span></div>
                 <div style="display: inline-block; padding: 10px; border-radius: 10px; background: ${isMe ? "var(--primary, #007bff)" : "#eee"}; color: ${isMe ? "white" : "black"}; max-width: 70%;">
-                    ${messageContent}
+                    <div class="msg-content">${messageContent}</div>
                 </div>
             </div>
         `;
     chatBox.insertAdjacentHTML("beforeend", msgHtml);
     chatBox.scrollTop = chatBox.scrollHeight;
+  }
+
+  // Setup Long Press for Message Options
+  let pressTimer;
+  const chatBody = document.getElementById("chatBody");
+  if (chatBody) {
+    const startPress = (e) => {
+      const msgEl = e.target.closest(".message.sent");
+      if (!msgEl) return;
+      
+      pressTimer = setTimeout(() => {
+        handleMessageLongPress(msgEl);
+      }, 700);
+    };
+
+    const endPress = () => clearTimeout(pressTimer);
+
+    chatBody.addEventListener("mousedown", startPress);
+    chatBody.addEventListener("touchstart", startPress);
+    chatBody.addEventListener("mouseup", endPress);
+    chatBody.addEventListener("mouseleave", endPress);
+    chatBody.addEventListener("touchend", endPress);
+  }
+
+  async function handleMessageLongPress(msgEl) {
+    const messageId = msgEl.dataset.id;
+    const type = msgEl.dataset.type;
+    
+    const overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:10000;";
+    overlay.innerHTML = `
+      <div style="background:var(--bg-card, white); padding:1.5rem; border-radius:12px; text-align:center; min-width:250px; box-shadow:0 10px 25px rgba(0,0,0,0.2);">
+        <h4 style="margin-bottom:1.5rem; color:var(--text-main);">Message Options</h4>
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          ${type === 'text' ? '<button id="opt-edit" style="background:var(--primary); color:white; border:none; padding:12px; border-radius:8px; cursor:pointer; font-weight:600;">Edit Message</button>' : ''}
+          <button id="opt-delete" style="background:#dc3545; color:white; border:none; padding:12px; border-radius:8px; cursor:pointer; font-weight:600;">Delete Message</button>
+          <button id="opt-cancel" style="background:#6c757d; color:white; border:none; padding:12px; border-radius:8px; cursor:pointer;">Cancel</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    if (type === 'text') {
+      overlay.querySelector("#opt-edit").onclick = () => {
+        overlay.remove();
+        const oldVal = msgEl.querySelector(".msg-content").innerText;
+        const newVal = prompt("Edit your message:", oldVal);
+        if (newVal !== null && newVal.trim() !== "" && newVal.trim() !== oldVal) {
+          socket.emit("edit-message", { messageId, content: newVal.trim(), groupId: window.currentGroupId });
+        }
+      };
+    }
+
+    overlay.querySelector("#opt-delete").onclick = async () => {
+      overlay.remove();
+      if (await showAlert("Delete this message for everyone?")) {
+        socket.emit("delete-message", { messageId, groupId: window.currentGroupId });
+      }
+    };
+
+    overlay.querySelector("#opt-cancel").onclick = () => overlay.remove();
+    overlay.onclick = (e) => { if(e.target === overlay) overlay.remove(); };
   }
 
   // LOAD MESSAGES

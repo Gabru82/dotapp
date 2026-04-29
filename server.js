@@ -207,6 +207,44 @@ io.on("connection", (socket) => {
     }
   });
 
+  /**
+   * Handle Message Edits
+   */
+  socket.on("edit-message", async (data) => {
+    const { messageId, content, groupId } = data;
+    const userId = socket.user.id;
+
+    try {
+      // Verify ownership before updating
+      const result = await db.query("SELECT user_id FROM messages WHERE id = $1", [messageId]);
+      if (result.rows.length > 0 && result.rows[0].user_id === userId) {
+        await db.query("UPDATE messages SET content = $1 WHERE id = $2", [content, messageId]);
+        io.to(`group_${groupId}`).emit("message-updated", { messageId, content });
+      }
+    } catch (err) {
+      console.error("Error editing message:", err);
+    }
+  });
+
+  /**
+   * Handle Message Deletions
+   */
+  socket.on("delete-message", async (data) => {
+    const { messageId, groupId } = data;
+    const userId = socket.user.id;
+
+    try {
+      // Verify ownership before deleting
+      const result = await db.query("SELECT user_id FROM messages WHERE id = $1", [messageId]);
+      if (result.rows.length > 0 && result.rows[0].user_id === userId) {
+        await db.query("DELETE FROM messages WHERE id = $1", [messageId]);
+        io.to(`group_${groupId}`).emit("message-deleted", { messageId });
+      }
+    } catch (err) {
+      console.error("Error deleting message:", err);
+    }
+  });
+
   // WebRTC Signal Relay
   socket.on("webrtc-signal", (data) => {
     const { to, signal, groupId } = data;

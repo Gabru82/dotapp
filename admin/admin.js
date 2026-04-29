@@ -73,6 +73,25 @@ socket.on("new-message", (msg) => {
   }
 });
 
+socket.on("message-updated", (data) => {
+    const bubble = document.querySelector(`.msg-item[data-id="${data.messageId}"] .msg-text`);
+    if (bubble) {
+        bubble.innerText = data.content;
+        if (!bubble.parentNode.querySelector('.edited-tag')) {
+            const tag = document.createElement('div');
+            tag.className = 'edited-tag';
+            tag.style.cssText = "font-size: 0.65rem; opacity: 0.6; text-align: right; margin-top: 4px;";
+            tag.innerText = "edited";
+            bubble.parentNode.appendChild(tag);
+        }
+    }
+});
+
+socket.on("message-deleted", (data) => {
+    const msgEl = document.querySelector(`.msg-item[data-id="${data.messageId}"]`);
+    if (msgEl) msgEl.remove();
+});
+
 // API helper
 async function apiCall(endpoint, options = {}) {
   const token = localStorage.getItem("admin_token");
@@ -621,13 +640,13 @@ document.addEventListener("DOMContentLoaded", async () => {
                                       }
 
                                       return `
-                                  <div style="margin-bottom: 1rem; text-align: ${m.user_id === user.id ? "right" : "left"}">
+                                  <div class="msg-item" data-id="${m.id}" data-type="${m.type}" style="margin-bottom: 1rem; text-align: ${m.user_id === user.id ? "right" : "left"}">
                                       <div style="font-size: 0.7rem; color: var(--text-muted);">
                                         ${m.user_name} (${m.user_role})
                                         ${m.type === "document" ? `<span style="font-size: 0.6rem; margin-left: 5px;">(${fileName})</span>` : ""}
                                       </div>
-                                      <div style="display: inline-block; padding: 8px 12px; border-radius: 12px; background: ${m.user_id === user.id ? "var(--primary)" : "var(--bg-body)"}; color: ${m.user_id === user.id ? "white" : "inherit"}; margin-top: 4px; max-width: 80%;">
-                                          ${contentHtml}
+                                      <div class="msg-bubble" style="display: inline-block; padding: 8px 12px; border-radius: 12px; background: ${m.user_id === user.id ? "var(--primary)" : "var(--bg-body)"}; color: ${m.user_id === user.id ? "white" : "inherit"}; margin-top: 4px; max-width: 80%;">
+                                          <div class="msg-text">${contentHtml}</div>
                                       </div>
                                   </div>
                                 `;
@@ -749,6 +768,62 @@ document.addEventListener("DOMContentLoaded", async () => {
       sendBtn.onclick = handleSend;
       msgInput.onkeyup = (e) => {
         if (e.key === "Enter") handleSend();
+      };
+
+      // Long Press for Admin chat view
+      let adminPressTimer;
+      chatBox.addEventListener("mousedown", (e) => startAdminPress(e));
+      chatBox.addEventListener("touchstart", (e) => startAdminPress(e));
+      chatBox.addEventListener("mouseup", () => clearTimeout(adminPressTimer));
+      chatBox.addEventListener("mouseleave", () => clearTimeout(adminPressTimer));
+      chatBox.addEventListener("touchend", () => clearTimeout(adminPressTimer));
+
+      function startAdminPress(e) {
+          const item = e.target.closest('.msg-item');
+          if (!item || item.style.textAlign !== "right") return; 
+
+          adminPressTimer = setTimeout(() => {
+              showAdminMsgOptions(item);
+          }, 700);
+      }
+
+      async function showAdminMsgOptions(el) {
+          const msgId = el.dataset.id;
+          const type = el.dataset.type;
+          const overlay = document.createElement('div');
+          overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:11000;";
+          overlay.innerHTML = `
+            <div style="background:var(--bg-card); padding:20px; border-radius:12px; text-align:center; min-width:200px; box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+                <h4 style="margin-bottom:15px; color:var(--text-main);">Options</h4>
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                    ${type === 'text' ? '<button id="adm-edit" style="width:100%; padding:10px; background:var(--primary); color:white; border:none; border-radius:5px; cursor:pointer;">Edit</button>' : ''}
+                    <button id="adm-del" style="width:100%; padding:10px; background:#dc3545; color:white; border:none; border-radius:5px; cursor:pointer;">Delete</button>
+                    <button id="adm-can" style="width:100%; padding:10px; background:#6c757d; color:white; border:none; border-radius:5px; cursor:pointer;">Cancel</button>
+                </div>
+            </div>
+          `;
+          document.body.appendChild(overlay);
+          
+          if (type === 'text') {
+              overlay.querySelector('#adm-edit').onclick = () => {
+                  overlay.remove();
+                  const old = el.querySelector('.msg-text').innerText;
+                  const val = prompt("Edit message:", old);
+                  if (val !== null && val.trim() !== "" && val.trim() !== old) {
+                      socket.emit("edit-message", { messageId: msgId, content: val.trim(), groupId: currentActiveGroupId });
+                  }
+              };
+          }
+          
+          overlay.querySelector('#adm-del').onclick = async () => {
+              overlay.remove();
+              if (await showAlert("Delete this message?")) {
+                  socket.emit("delete-message", { messageId: msgId, groupId: currentActiveGroupId });
+              }
+          };
+          
+          overlay.querySelector('#adm-can').onclick = () => overlay.remove();
+          overlay.onclick = (e) => { if(e.target === overlay) overlay.remove(); };
       };
 
       // Plus button to open options modal

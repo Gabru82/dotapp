@@ -1119,6 +1119,41 @@ document.addEventListener("DOMContentLoaded", async () => {
     chatBox.scrollTop = chatBox.scrollHeight;
   }
 
+  // UI Helper: Custom Edit Modal
+  function showEditModal(oldValue) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement("div");
+      overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:11000;";
+      
+      const box = document.createElement("div");
+      box.style.cssText = "background:var(--bg-card, white); padding:1.5rem; border-radius:12px; width:90%; max-width:400px; box-shadow:0 10px 25px rgba(0,0,0,0.2); font-family:sans-serif;";
+      
+      box.innerHTML = `
+        <h4 style="margin-bottom:1rem; color:var(--text-main); text-align:left;">Edit Message</h4>
+        <textarea id="edit-text-area" style="width:100%; height:100px; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--bg-body); color:var(--text-main); font-family:inherit; resize:none; margin-bottom:1rem; outline:none;">${oldValue}</textarea>
+        <div style="display:flex; gap:10px; justify-content:flex-end;">
+          <button id="cancel-edit" style="background:#6c757d; color:white; border:none; padding:8px 16px; border-radius:6px; cursor:pointer;">Cancel</button>
+          <button id="save-edit" style="background:var(--primary, #007bff); color:white; border:none; padding:8px 16px; border-radius:6px; cursor:pointer; font-weight:600;">Save</button>
+        </div>
+      `;
+      
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+      
+      const textarea = box.querySelector("#edit-text-area");
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+
+      box.querySelector("#cancel-edit").onclick = () => { overlay.remove(); resolve(null); };
+      box.querySelector("#save-edit").onclick = () => {
+        const val = textarea.value.trim();
+        overlay.remove();
+        resolve(val);
+      };
+      overlay.onclick = (e) => { if(e.target === overlay) { overlay.remove(); resolve(null); } };
+    });
+  }
+
   // Setup Long Press for Message Options
   let pressTimer;
   const chatBody = document.getElementById("chatBody");
@@ -1160,11 +1195,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.body.appendChild(overlay);
 
     if (type === 'text') {
-      overlay.querySelector("#opt-edit").onclick = () => {
+      overlay.querySelector("#opt-edit").onclick = async () => {
         overlay.remove();
         const oldVal = msgEl.querySelector(".msg-content").innerText;
-        const newVal = prompt("Edit your message:", oldVal);
-        if (newVal !== null && newVal.trim() !== "" && newVal.trim() !== oldVal) {
+        const newVal = await showEditModal(oldVal);
+        if (newVal !== null && newVal !== "" && newVal !== oldVal) {
           socket.emit("edit-message", { messageId, content: newVal.trim(), groupId: window.currentGroupId });
         }
       };

@@ -60,10 +60,13 @@ socket.on("new-message", (msg) => {
       }
 
       const msgHtml = `
-        <div style="margin-bottom: 1rem; text-align: ${isMe ? "right" : "left"}">
-            <div style="font-size: 0.7rem; color: var(--text-muted);">${msg.user_name} (${msg.user_role})</div>
-            <div style="display: inline-block; padding: 8px 12px; border-radius: 12px; background: ${isMe ? "var(--primary)" : "var(--bg-body)"}; color: ${isMe ? "white" : "inherit"}; margin-top: 4px; max-width: 80%;">
-                ${contentHtml}
+        <div class="msg-item" data-id="${msg.id}" data-type="${msg.type || 'text'}" style="margin-bottom: 1rem; text-align: ${isMe ? "right" : "left"}">
+            <div style="font-size: 0.7rem; color: var(--text-muted);">
+                ${msg.user_name} (${msg.user_role})
+                ${msg.type === "document" ? `<span style="font-size: 0.6rem; margin-left: 5px;">(${fileName})</span>` : ""}
+            </div>
+            <div class="msg-bubble" style="display: inline-block; padding: 8px 12px; border-radius: 12px; background: ${isMe ? "var(--primary)" : "var(--bg-body)"}; color: ${isMe ? "white" : "inherit"}; margin-top: 4px; max-width: 80%;">
+                <div class="msg-text">${contentHtml}</div>
             </div>
         </div>
       `;
@@ -624,6 +627,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                                 : messages
                                     .map((m) => {
                                       let contentHtml = m.content || "";
+                                      let fName = "";
                                       if (m.type === "image")
                                         contentHtml = `<img src="${m.file_url}" style="max-width: 100%; border-radius: 8px; display: block;">`;
                                       else if (m.type === "video")
@@ -632,18 +636,17 @@ document.addEventListener("DOMContentLoaded", async () => {
                                         contentHtml = `<audio controls src="${m.file_url}" style="max-width: 100%; display: block;"></audio>`; // New: Audio rendering
                                       else if (m.type === "document") {
                                         // New: Document rendering
-                                        const fileName = m.file_url.substring(
+                                        fName = m.file_url.substring(
                                           m.file_url.lastIndexOf("/") + 1,
                                         );
-                                        contentHtml = `<a href="${m.file_url}" target="_blank" style="color: inherit; text-decoration: underline;"><i class="fas fa-file"></i> ${fileName}</a>`;
-                                        // Note: The original code had `fileName` defined here, but used outside this block. Moved definition to `new-message` listener.
+                                        contentHtml = `<a href="${m.file_url}" target="_blank" style="color: inherit; text-decoration: underline;"><i class="fas fa-file"></i> ${fName}</a>`;
                                       }
 
                                       return `
-                                  <div class="msg-item" data-id="${m.id}" data-type="${m.type}" style="margin-bottom: 1rem; text-align: ${m.user_id === user.id ? "right" : "left"}">
+                                  <div class="msg-item" data-id="${m.id}" data-type="${m.type || 'text'}" style="margin-bottom: 1rem; text-align: ${m.user_id === user.id ? "right" : "left"}">
                                       <div style="font-size: 0.7rem; color: var(--text-muted);">
                                         ${m.user_name} (${m.user_role})
-                                        ${m.type === "document" ? `<span style="font-size: 0.6rem; margin-left: 5px;">(${fileName})</span>` : ""}
+                                        ${m.type === "document" ? `<span style="font-size: 0.6rem; margin-left: 5px;">(${fName})</span>` : ""}
                                       </div>
                                       <div class="msg-bubble" style="display: inline-block; padding: 8px 12px; border-radius: 12px; background: ${m.user_id === user.id ? "var(--primary)" : "var(--bg-body)"}; color: ${m.user_id === user.id ? "white" : "inherit"}; margin-top: 4px; max-width: 80%;">
                                           <div class="msg-text">${contentHtml}</div>
